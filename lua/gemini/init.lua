@@ -55,7 +55,7 @@ local function open_gemini_window(args)
 	end
 
 	vim.cmd("enew")
-	vim.cmd("setlocal buftype=nofile bufhidden=hide noswapfile")
+	vim.cmd("setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted")
 	state.bufnr = vim.api.nvim_get_current_buf()
 	vim.api.nvim_buf_set_name(state.bufnr, "gemini_cli")
 
@@ -191,30 +191,19 @@ function M.gemini_chat_focus()
 		return
 	end
 
-	local current_win = vim.api.nvim_get_current_win()
-	local win_tab = vim.api.nvim_win_get_tabpage(state.winnr)
-	local current_tab = vim.api.nvim_get_current_tabpage()
+	local user_current_win = vim.api.nvim_get_current_win()
+	local gemini_win_tab = vim.api.nvim_win_get_tabpage(state.winnr)
+	local user_current_tab = vim.api.nvim_get_current_tabpage()
 
-	if win_tab ~= current_tab then
-		vim.api.nvim_set_current_tabpage(win_tab)
+	if gemini_win_tab ~= user_current_tab then
+		vim.api.nvim_set_current_tabpage(gemini_win_tab)
+	end
+
+	if user_current_win ~= state.winnr then
 		vim.api.nvim_set_current_win(state.winnr)
-		pcall(vim.cmd, "startinsert")
-		return
 	end
 
-	if current_win ~= state.winnr then
-		vim.api.nvim_set_current_win(state.winnr)
-		pcall(vim.cmd, "startinsert")
-		return
-	end
-
-	local mode = vim.api.nvim_get_mode().mode
-
-	if mode == "t" then
-		vim.cmd("wincmd p")
-	else
-		pcall(vim.cmd, "startinsert")
-	end
+	pcall(vim.cmd, "startinsert")
 end
 
 function M.setup(opts)
