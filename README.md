@@ -6,11 +6,11 @@ A Neovim plugin to seamlessly integrate the Gemini CLI.
 
 ## Features
 
-- Toggle the Gemini CLI in a split window (vertical or horizontal).
-- Pass arbitrary flags to the Gemini CLI (e.g., `:GeminiToggle --temp 0.9`).
-- Send code/text selections or line ranges directly to the CLI.
-- Automatically checks if the `gemini` CLI is installed on startup and shows a warning if missing.
-- Utility buffers are hidden from buffer lists.
+- Open the Gemini CLI in the current window or a split (vertical or horizontal).
+- Background process: Send code/text selections to the CLI even when the chat window is closed.
+- Multiline paste: Automatically compresses pasted text in the Gemini input.
+- Pass arbitrary flags to the Gemini CLI (e.g., `:GeminiOpen --temp 0.9`).
+- Automatically checks if the `gemini` CLI is installed on startup.
 - Sets the `EDITOR` environment variable to `nvim` for the Gemini CLI session.
 
 ## Requirements
@@ -27,7 +27,7 @@ A Neovim plugin to seamlessly integrate the Gemini CLI.
   "jonroosevelt/gemini-cli.nvim",
   config = function()
     require("gemini").setup({
-      split_direction = "horizontal", -- optional: "vertical" (default) or "horizontal"
+      split_direction = "current", -- optional: "current" (default), "vertical" or "horizontal"
     })
   end,
 }
@@ -40,7 +40,7 @@ use {
   "jonroosevelt/gemini-cli.nvim",
   config = function()
     require("gemini").setup({
-      split_direction = "horizontal", -- optional: "vertical" (default) or "horizontal"
+      split_direction = "current", -- optional: "current" (default), "vertical" or "horizontal"
     })
   end,
 }
@@ -64,54 +64,40 @@ The plugin can be configured with the following options:
 
 ```lua
 require('gemini').setup({
-  split_direction = "horizontal", -- "vertical" (default) or "horizontal"
+  split_direction = "current", -- "current" (default), "vertical" or "horizontal"
 })
 ```
 
 ### Configuration Options
 
 - `split_direction`: Controls how the Gemini CLI window opens
-  - `"vertical"` (default): Opens in a vertical split (side by side)
-  - `"horizontal"`: Opens in a horizontal split (top and bottom)
-
-### Examples
-
-#### Vertical Split (Default)
-```lua
-require('gemini').setup() -- or
-require('gemini').setup({
-  split_direction = "vertical"
-})
-```
-
-#### Horizontal Split
-```lua
-require('gemini').setup({
-  split_direction = "horizontal"
-})
-```
+  - `"current"` (default): Replaces the current buffer in the active window.
+  - `"vertical"`: Opens in a vertical split (side by side).
+  - `"horizontal"`: Opens in a horizontal split (top and bottom).
 
 ## Usage
 
 This plugin provides the following user commands:
 
-- `:GeminiToggle [args]` - Opens or closes the Gemini CLI window. You can pass arguments, for example: `:GeminiToggle --temp 0.7 --model gemini-1.5-flash`.
-- `:GeminiSend` - Sends the selected text to the Gemini CLI. Works with Visual Mode or line ranges (e.g., `:10,20GeminiSend`).
-- `:GeminiChatFocus` - Focuses the Gemini CLI window and enters Insert mode. **Note:** This command must be triggered from Normal mode.
+- `:GeminiOpen [args]` - Starts the Gemini process (if not running) and opens the chat window. You can pass arguments like `:GeminiOpen --model gemini-1.5-flash`.
+- `:GeminiClose` - Stops the Gemini process and wipes the buffer.
+- `:GeminiSend` - Sends the selected text to the Gemini CLI as a "pasted" block. Works even if the chat window is closed (provided the process is running).
+- `:GeminiChatFocus` - Focuses the Gemini CLI window and enters Insert mode.
 
 ### Recommended Keybindings
 
-Since this plugin does not set default keybindings, you should add your own to your `init.lua`:
-
 ```lua
--- Toggle Gemini CLI
-vim.keymap.set("n", "<leader>gt", "<cmd>GeminiToggle<CR>", { desc = "Toggle Gemini" })
+-- Open Gemini CLI
+vim.keymap.set("n", "<leader>go", "<cmd>GeminiOpen<CR>", { desc = "Open Gemini" })
+
+-- Close Gemini CLI
+vim.keymap.set("n", "<leader>gc", "<cmd>GeminiClose<CR>", { desc = "Stop Gemini" })
 
 -- Send selection to Gemini (Visual Mode)
-vim.keymap.set("v", "<leader>gs", ":GeminiSend<CR>", { desc = "Send selection to Gemini" })
+vim.keymap.set("v", "<leader>gs", "<cmd>GeminiSend<CR>", { desc = "Send to Gemini" })
 
 -- Focus Gemini Chat
-vim.keymap.set("n", "<leader>gc", "<cmd>GeminiChatFocus<CR>", { desc = "Focus Gemini Chat" })
+vim.keymap.set("n", "<leader>gf", "<cmd>GeminiChatFocus<CR>", { desc = "Focus Gemini" })
 ```
 
 ## Troubleshooting

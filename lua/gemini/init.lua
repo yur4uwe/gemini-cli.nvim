@@ -1,66 +1,35 @@
 local M = {}
 
+-- Reopening the window when :q is used reloads gemini
+
 -- Default configuration
 local default_config = {
-	split_direction = "vertical", -- "vertical" or "horizontal"
+	split_direction = "current", -- "current", "vertical" or "horizontal"
 }
 
 local config = {}
 
 local state = {
 	bufnr = nil,
-	winnr = nil,
 	chan_id = nil,
 }
 
-local function close_gemini_window()
-	if state.winnr and vim.api.nvim_win_is_valid(state.winnr) then
-		vim.api.nvim_win_close(state.winnr, true)
-	end
-	if state.chan_id then
-		vim.fn.jobstop(state.chan_id)
-	end
-	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
-		vim.api.nvim_buf_delete(state.bufnr, { force = true })
-	end
-	state.winnr = nil
-	state.bufnr = nil
-	state.chan_id = nil
-end
-
---- Open the Gemini CLI window
---- If window is already open, all flags passed will be ignored.
---- @param args string
---- @return nil
-local function open_gemini_window(args)
-	-- If the window is already open, just focus it.
-	if state.winnr and vim.api.nvim_win_is_valid(state.winnr) then
-		vim.api.nvim_set_current_win(state.winnr)
-		return
-	end
-
-	-- Use configured split direction
-	if config.split_direction == "horizontal" then
-		vim.cmd("split")
-	else
-		vim.cmd("vsplit")
-	end
-
-	state.winnr = vim.api.nvim_get_current_win()
-
-	-- Reuse existing buffer if valid and process is alive
+local function ensure_job(args)
 	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) and state.chan_id then
-		vim.api.nvim_win_set_buf(state.winnr, state.bufnr)
 		return
 	end
 
-	vim.cmd("enew")
-	vim.cmd("setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted")
-	state.bufnr = vim.api.nvim_get_current_buf()
+	local cur_win = vim.api.nvim_get_current_win()
+	local cur_buf = vim.api.nvim_get_current_buf()
+
+	state.bufnr = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_buf_set_name(state.bufnr, "gemini_cli")
 
+	vim.api.nvim_win_set_buf(cur_win, state.bufnr)
+	vim.cmd("setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted")
+
 	-- Map Esc to exit terminal mode in the Gemini buffer
-	vim.api.nvim_buf_set_keymap(state.bufnr, "t", "<Esc>", "<C-\\><C-n>", { noremap = true, silent = true })
+	vim.api.nvim_buf_set_keymap(state.bufnr, "t", "<Esc><Esc>", "<C-\\><C-n>", { noremap = true, silent = true })
 
 	local cmd = { "gemini" }
 	if args and args ~= "" then
@@ -72,31 +41,45 @@ local function open_gemini_window(args)
 	state.chan_id = vim.fn.termopen(cmd, {
 		env = { ["EDITOR"] = "nvim" },
 		on_exit = function()
-			-- Check if the window is still valid before trying to close it
-			if state.winnr and vim.api.nvim_win_is_valid(state.winnr) then
-				local buf_in_win = vim.api.nvim_win_get_buf(state.winnr)
-				if buf_in_win == state.bufnr then
-					vim.api.nvim_win_close(state.winnr, true)
-				end
-			end
 			state.bufnr = nil
-			state.winnr = nil
 			state.chan_id = nil
 		end,
 	})
+
+	vim.api.nvim_win_set_buf(cur_win, cur_buf)
 end
 
---- Toggle the Gemini CLI window
---- @param opts table
---- @return nil
-function M.toggle_gemini_cli(opts)
-	local args = (opts and opts.args) or ""
-
-	if state.winnr and vim.api.nvim_win_is_valid(state.winnr) then
-		close_gemini_window()
-	else
-		open_gemini_window(args)
+function M.close_gemini_cli()
+	if state.chan_id then
+		vim.fn.jobstop(state.chan_id)
 	end
+	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+		vim.api.nvim_buf_delete(state.bufnr, { force = true })
+	end
+	state.bufnr = nil
+	state.chan_id = nil
+end
+
+function M.focus_gemini_cli(opts)
+	local args = (opts and opts.args) or ""
+	ensure_job(args)
+
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == state.bufnr then
+			vim.api.nvim_set_current_win(win)
+			vim.cmd("startinsert")
+			return
+		end
+	end
+
+	if config.split_direction == "horizontal" then
+		vim.cmd("split")
+	elseif config.split_direction == "vertical" then
+		vim.cmd("vsplit")
+	end
+
+	vim.api.nvim_win_set_buf(0, state.bufnr)
+	vim.cmd("startinsert")
 end
 
 local function show_floating_message(message)
@@ -129,15 +112,9 @@ local function show_floating_message(message)
 	end, 3000)
 end
 
---- Send the selected text to the Gemini CLI
---- @param opts table
---- @return nil
 function M.send_to_gemini(opts)
-	-- Check if the Gemini window is open and the channel is available.
-	if not (state.winnr and vim.api.nvim_win_is_valid(state.winnr) and state.chan_id) then
-		show_floating_message(
-			"Gemini CLI is not running. Please open it with :GeminiToggle or specified keybind first."
-		)
+	if not state.chan_id then
+		show_floating_message("Gemini CLI is not running. Please open it with :GeminiOpen first.")
 		return
 	end
 
@@ -178,32 +155,11 @@ function M.send_to_gemini(opts)
 	local text = table.concat(lines, "\n")
 
 	if text and #text > 0 then
-		vim.fn.chansend(state.chan_id, text .. "\n")
-		vim.api.nvim_set_current_win(state.winnr)
+		vim.fn.chansend(state.chan_id, "\27[200~" .. text .. "\27[201~\n")
+		show_floating_message("Sent to Gemini")
 	else
 		show_floating_message("No text selected.")
 	end
-end
-
-function M.gemini_chat_focus()
-	if not state.winnr or not vim.api.nvim_win_is_valid(state.winnr) then
-		vim.notify("Gemini CLI is not running. Please open it first.", vim.log.levels.WARN)
-		return
-	end
-
-	local user_current_win = vim.api.nvim_get_current_win()
-	local gemini_win_tab = vim.api.nvim_win_get_tabpage(state.winnr)
-	local user_current_tab = vim.api.nvim_get_current_tabpage()
-
-	if gemini_win_tab ~= user_current_tab then
-		vim.api.nvim_set_current_tabpage(gemini_win_tab)
-	end
-
-	if user_current_win ~= state.winnr then
-		vim.api.nvim_set_current_win(state.winnr)
-	end
-
-	pcall(vim.cmd, "startinsert")
 end
 
 function M.setup(opts)
@@ -216,16 +172,25 @@ function M.setup(opts)
 	end
 
 	vim.api.nvim_create_user_command(
-		"GeminiToggle",
-		M.toggle_gemini_cli,
-		{ desc = "Toggle the Gemini CLI window", nargs = "*" }
+		"GeminiOpen",
+		M.focus_gemini_cli,
+		{ desc = "Open the Gemini CLI chat", nargs = "*" }
+	)
+	vim.api.nvim_create_user_command(
+		"GeminiClose",
+		M.close_gemini_cli,
+		{ desc = "Close the Gemini CLI chat process" }
 	)
 	vim.api.nvim_create_user_command(
 		"GeminiSend",
 		M.send_to_gemini,
 		{ desc = "Send selection to Gemini", range = true }
 	)
-	vim.api.nvim_create_user_command("GeminiChatFocus", M.gemini_chat_focus, { desc = "Focus on Geminis opened chat" })
+	vim.api.nvim_create_user_command(
+		"GeminiChatFocus",
+		M.focus_gemini_cli,
+		{ desc = "Focus on Gemini's opened chat", nargs = "*" }
+	)
 end
 
 return M
