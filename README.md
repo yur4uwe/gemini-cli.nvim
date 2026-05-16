@@ -79,7 +79,7 @@ require('gemini').setup({
 
 This plugin provides the following user commands:
 
-- `:GeminiOpen [args]` - Starts the Gemini process (if not running) and opens the chat window. You can pass arguments like `:GeminiOpen --model gemini-1.5-flash`.
+- `:GeminiOpen [args]` - Starts the Gemini process (if not running) and opens the chat window. You can pass arguments like `:GeminiOpen --model gemini-1.5-flash`. **Note:** Arguments are only applied when the process starts. To change arguments for a running process, use `:GeminiClose` first.
 - `:GeminiClose` - Stops the Gemini process and wipes the buffer.
 - `:GeminiSend` - Sends the selected text to the Gemini CLI as a "pasted" block. Works even if the chat window is closed (provided the process is running).
 - `:GeminiChatFocus` - Focuses the Gemini CLI window and enters Insert mode.
