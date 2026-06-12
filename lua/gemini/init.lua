@@ -4,7 +4,8 @@ local M = {}
 
 -- Default configuration
 local default_config = {
-	split_direction = "current", -- "current", "vertical" or "horizontal"
+	split_location = "current", -- "current", "vertical" or "horizontal"
+	cmd = "agy",
 }
 
 local config = {}
@@ -25,19 +26,28 @@ local function ensure_job(args)
 	state.bufnr = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_buf_set_name(state.bufnr, "gemini_cli")
 
+	vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
+		buffer = state.bufnr,
+		callback = function()
+			vim.cmd("startinsert")
+		end,
+	})
+
 	vim.api.nvim_win_set_buf(cur_win, state.bufnr)
 	vim.cmd("setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted")
 
-	-- Map Esc to exit terminal mode in the Gemini buffer
+	-- Map Esc to exit terminal mode in the Gemini buffer if altscreen is disabled
 	vim.api.nvim_buf_set_keymap(state.bufnr, "t", "<Esc><Esc>", "<C-\\><C-n>", { noremap = true, silent = true })
 
-	local cmd = { "gemini" }
+	-- Defensive 'or' against racing issues (unprobable)
+	local cmd = { config.cmd or "agy" }
 	if args and args ~= "" then
 		for word in string.gmatch(args, "%S+") do
 			table.insert(cmd, word)
 		end
 	end
 
+	---@diagnostic disable-next-line: deprecated
 	state.chan_id = vim.fn.termopen(cmd, {
 		env = { ["EDITOR"] = "nvim" },
 		on_exit = function()
@@ -49,7 +59,7 @@ local function ensure_job(args)
 	vim.api.nvim_win_set_buf(cur_win, cur_buf)
 end
 
-function M.close_gemini_cli()
+function M.close_chat()
 	if state.chan_id then
 		vim.fn.jobstop(state.chan_id)
 	end
@@ -60,7 +70,7 @@ function M.close_gemini_cli()
 	state.chan_id = nil
 end
 
-function M.focus_gemini_cli(opts)
+function M.focus_chat(opts)
 	local args = (opts and opts.args) or ""
 	ensure_job(args)
 
@@ -72,9 +82,9 @@ function M.focus_gemini_cli(opts)
 		end
 	end
 
-	if config.split_direction == "horizontal" then
+	if config.split_location == "horizontal" then
 		vim.cmd("split")
-	elseif config.split_direction == "vertical" then
+	elseif config.split_location == "vertical" then
 		vim.cmd("vsplit")
 	end
 
@@ -112,10 +122,15 @@ local function show_floating_message(message)
 	end, 3000)
 end
 
-function M.send_to_gemini(opts)
+function M.paste_selection_to_chat(opts)
 	if not state.chan_id then
 		show_floating_message("Gemini CLI is not running. Please open it with :GeminiOpen first.")
 		return
+	end
+
+	local mode = vim.api.nvim_get_mode().mode
+	if mode == "v" or mode == "V" or mode == "\22" then -- \22 for visual block mode
+		vim.cmd([[execute "normal! \<ESC>"]])
 	end
 
 	local start_line, end_line, start_col, end_col
@@ -166,29 +181,21 @@ function M.setup(opts)
 	-- Merge user config with defaults
 	config = vim.tbl_deep_extend("force", default_config, opts or {})
 
-	if vim.fn.executable("gemini") ~= 1 then
-		vim.notify("Gemini CLI not found. Please install it to use this plugin.", vim.log.levels.WARN)
+	if vim.fn.executable(config.cmd) ~= 1 then
+		vim.notify("Antigravity CLI not found. Please install it to use this plugin.", vim.log.levels.WARN)
 		return
 	end
 
-	vim.api.nvim_create_user_command(
-		"GeminiOpen",
-		M.focus_gemini_cli,
-		{ desc = "Open the Gemini CLI chat", nargs = "*" }
-	)
-	vim.api.nvim_create_user_command(
-		"GeminiClose",
-		M.close_gemini_cli,
-		{ desc = "Close the Gemini CLI chat process" }
-	)
+	vim.api.nvim_create_user_command("GeminiOpen", M.focus_chat, { desc = "Open the Gemini CLI chat", nargs = "*" })
+	vim.api.nvim_create_user_command("GeminiClose", M.close_chat, { desc = "Close the Gemini CLI chat process" })
 	vim.api.nvim_create_user_command(
 		"GeminiSend",
-		M.send_to_gemini,
+		M.paste_selection_to_chat,
 		{ desc = "Send selection to Gemini", range = true }
 	)
 	vim.api.nvim_create_user_command(
 		"GeminiChatFocus",
-		M.focus_gemini_cli,
+		M.focus_chat,
 		{ desc = "Focus on Gemini's opened chat", nargs = "*" }
 	)
 end

@@ -27,7 +27,8 @@ A Neovim plugin to seamlessly integrate the Gemini CLI.
   "jonroosevelt/gemini-cli.nvim",
   config = function()
     require("gemini").setup({
-      split_direction = "current", -- optional: "current" (default), "vertical" or "horizontal"
+      split_location = "current", -- optional: "current" (default), "vertical" or "horizontal"
+      cmd = "agy",                -- optional: command or path to binary
     })
   end,
 }
@@ -40,7 +41,8 @@ use {
   "jonroosevelt/gemini-cli.nvim",
   config = function()
     require("gemini").setup({
-      split_direction = "current", -- optional: "current" (default), "vertical" or "horizontal"
+      split_location = "current", -- optional: "current" (default), "vertical" or "horizontal"
+      cmd = "agy",                -- optional: command or path to binary
     })
   end,
 }
@@ -64,13 +66,15 @@ The plugin can be configured with the following options:
 
 ```lua
 require('gemini').setup({
-  split_direction = "current", -- "current" (default), "vertical" or "horizontal"
+  cmd = "agy",                 -- command or path to the binary (default: "agy")
+  split_location = "current", -- "current" (default), "vertical" or "horizontal"
 })
 ```
 
 ### Configuration Options
 
-- `split_direction`: Controls how the Gemini CLI window opens
+- `cmd`: Command or path to the executable binary (e.g., `"agy"`, or `"/home/user/.local/bin/agy"`).
+- `split_location`: Controls how the Gemini CLI window opens
   - `"current"` (default): Replaces the current buffer in the active window.
   - `"vertical"`: Opens in a vertical split (side by side).
   - `"horizontal"`: Opens in a horizontal split (top and bottom).
@@ -85,25 +89,13 @@ This plugin provides the following user commands:
 - `:GeminiChatFocus` - Focuses the Gemini CLI window and enters Insert mode.
 
 ### Recommended Keybindings
-
 ```lua
--- Open Gemini CLI
 vim.keymap.set("n", "<leader>go", "<cmd>GeminiOpen<CR>", { desc = "Open Gemini" })
-
--- Close Gemini CLI
 vim.keymap.set("n", "<leader>gc", "<cmd>GeminiClose<CR>", { desc = "Stop Gemini" })
-
--- Send selection to Gemini (Visual Mode)
 vim.keymap.set("v", "<leader>gs", "<cmd>GeminiSend<CR>", { desc = "Send to Gemini" })
-
--- Focus Gemini Chat
 vim.keymap.set("n", "<leader>gf", "<cmd>GeminiChatFocus<CR>", { desc = "Focus Gemini" })
 ```
 
 ## Troubleshooting
 
-When you run the plugin, it will check if you have the `gemini` CLI installed. If it's missing, you will see a warning message. You can install it manually with:
-
-```bash
-npm install -g @google/gemini-cli
-```
+When you run the plugin, it will check if you have the configured binary (`agy` by default) installed. If it's missing, you will see a warning message.
