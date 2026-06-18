@@ -6,9 +6,10 @@ local M = {}
 local default_config = {
 	split_location = "current", -- "current", "vertical" or "horizontal"
 	cmd = "agy",
+	autoreload = true,
 }
 
-local config = {}
+local config = vim.deepcopy(default_config)
 
 local state = {
 	bufnr = nil,
@@ -16,47 +17,74 @@ local state = {
 }
 
 local function ensure_job(args)
-	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) and state.chan_id then
-		return
+	if vim.fn.executable(config.cmd) ~= 1 then
+		vim.notify("Antigravity CLI not found. Please install it to use this plugin.", vim.log.levels.WARN)
+		return false
 	end
 
-	local cur_win = vim.api.nvim_get_current_win()
-	local cur_buf = vim.api.nvim_get_current_buf()
+	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) and state.chan_id then
+		return true
+	end
 
 	state.bufnr = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_buf_set_name(state.bufnr, "gemini_cli")
 
-	vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
+	vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
 		buffer = state.bufnr,
 		callback = function()
-			vim.cmd("startinsert")
+			vim.cmd("setlocal nonumber norelativenumber signcolumn=no foldcolumn=0")
 		end,
 	})
 
-	vim.api.nvim_win_set_buf(cur_win, state.bufnr)
-	vim.cmd("setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted")
+	vim.api.nvim_buf_call(state.bufnr, function()
+		vim.cmd("setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted")
 
-	-- Map Esc to exit terminal mode in the Gemini buffer if altscreen is disabled
-	vim.api.nvim_buf_set_keymap(state.bufnr, "t", "<Esc><Esc>", "<C-\\><C-n>", { noremap = true, silent = true })
+		-- Map Esc to exit terminal mode in the Gemini buffer if altscreen is disabled
+		vim.api.nvim_buf_set_keymap(state.bufnr, "t", "<Esc><Esc>", "<C-\\><C-n>", { noremap = true, silent = true })
 
-	-- Defensive 'or' against racing issues (unprobable)
-	local cmd = { config.cmd or "agy" }
-	if args and args ~= "" then
-		for word in string.gmatch(args, "%S+") do
-			table.insert(cmd, word)
+		local cmd = { config.cmd }
+		if args and args ~= "" then
+			for word in string.gmatch(args, "%S+") do
+				table.insert(cmd, word)
+			end
 		end
+
+		---@diagnostic disable-next-line: deprecated
+		state.chan_id = vim.fn.termopen(cmd, {
+			env = { ["EDITOR"] = "nvim" },
+			on_exit = function()
+				state.bufnr = nil
+				state.chan_id = nil
+				vim.api.nvim_exec_autocmds("User", { pattern = "GeminiStopped" })
+			end,
+		})
+	end)
+
+	if config.autoreload then
+		vim.opt.autoread = true
+		local attached_bufnr = state.bufnr
+		vim.api.nvim_buf_attach(state.bufnr, false, {
+			on_lines = function(_, _, _, firstline, lastline, _)
+				if state.bufnr ~= attached_bufnr then
+					return true -- Detach listener if we've stopped/recreated the buffer
+				end
+
+				local lines = vim.api.nvim_buf_get_lines(state.bufnr, firstline, lastline, false)
+				for _, line in ipairs(lines) do
+					-- Detect file edit tool call logs (e.g. "Edit(...)")
+					if line:find("Edit%(") then
+						vim.schedule(function()
+							vim.cmd("checktime")
+						end)
+						break
+					end
+				end
+			end,
+		})
 	end
 
-	---@diagnostic disable-next-line: deprecated
-	state.chan_id = vim.fn.termopen(cmd, {
-		env = { ["EDITOR"] = "nvim" },
-		on_exit = function()
-			state.bufnr = nil
-			state.chan_id = nil
-		end,
-	})
-
-	vim.api.nvim_win_set_buf(cur_win, cur_buf)
+	vim.api.nvim_exec_autocmds("User", { pattern = "GeminiStarted" })
+	return true
 end
 
 function M.close_chat()
@@ -72,7 +100,9 @@ end
 
 function M.focus_chat(opts)
 	local args = (opts and opts.args) or ""
-	ensure_job(args)
+	if not ensure_job(args) then
+		return
+	end
 
 	for _, win in ipairs(vim.api.nvim_list_wins()) do
 		if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == state.bufnr then
@@ -96,18 +126,16 @@ local function show_floating_message(message)
 	local width = #message + 4
 	local height = 1
 
-	local cursor_row, cursor_col = unpack(vim.api.nvim_win_get_cursor(0))
-
 	local buf = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "  " .. message .. "  " })
 
 	local win_config = {
-		relative = "win",
+		relative = "cursor",
 		anchor = "NW",
 		width = width,
 		height = height,
-		row = cursor_row - 1,
-		col = cursor_col,
+		row = 1,
+		col = 0,
 		focusable = false,
 		style = "minimal",
 		border = "rounded",
@@ -133,38 +161,42 @@ function M.paste_selection_to_chat(opts)
 		vim.cmd([[execute "normal! \<ESC>"]])
 	end
 
-	local start_line, end_line, start_col, end_col
-
+	local lines
 	if opts and opts.range > 0 then
 		-- Use the range provided by the command (:1,5GeminiSend)
-		start_line = opts.line1
-		end_line = opts.line2
-		start_col = 1
-		end_col = 2147483647 -- Very large number to include the whole line
+		lines = vim.api.nvim_buf_get_lines(0, opts.line1 - 1, opts.line2, false)
 	else
-		local start_pos = vim.fn.getpos("'<")
-		local end_pos = vim.fn.getpos("'>")
-		start_line, start_col = start_pos[2], start_pos[3]
-		end_line, end_col = end_pos[2], end_pos[3]
+		-- For visual selections, use vim.fn.getregion if available (Neovim 0.10+)
+		if vim.fn.getregion then
+			local start_pos = vim.fn.getpos("'<")
+			local end_pos = vim.fn.getpos("'>")
+			local visual_mode = vim.fn.visualmode()
+			lines = vim.fn.getregion(start_pos, end_pos, { type = visual_mode })
+		else
+			-- Fallback for Neovim < 0.10
+			local start_pos = vim.fn.getpos("'<")
+			local end_pos = vim.fn.getpos("'>")
+			local start_line, start_col = start_pos[2], start_pos[3]
+			local end_line, end_col = end_pos[2], end_pos[3]
+
+			if start_line == 0 or end_line == 0 then
+				show_floating_message("No text selected.")
+				return
+			end
+
+			lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
+      if #lines == 1 then
+        lines[1] = string.sub(lines[1], start_col, end_col)
+      elseif #lines > 0 then
+        lines[#lines] = string.sub(lines[#lines], 1, end_col)
+        lines[1] = string.sub(lines[1], start_col)
+      end
+		end
 	end
 
-	if start_line == 0 or end_line == 0 then
+	if not lines or #lines == 0 then
 		show_floating_message("No text selected.")
 		return
-	end
-
-	local lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
-	if #lines == 0 then
-		show_floating_message("No text selected.")
-		return
-	end
-
-	-- Handle visual selection precisely
-	if #lines == 1 then
-		lines[1] = string.sub(lines[1], start_col, end_col)
-	else
-		lines[#lines] = string.sub(lines[#lines], 1, end_col)
-		lines[1] = string.sub(lines[1], start_col)
 	end
 
 	local text = table.concat(lines, "\n")
@@ -181,11 +213,6 @@ function M.setup(opts)
 	-- Merge user config with defaults
 	config = vim.tbl_deep_extend("force", default_config, opts or {})
 
-	if vim.fn.executable(config.cmd) ~= 1 then
-		vim.notify("Antigravity CLI not found. Please install it to use this plugin.", vim.log.levels.WARN)
-		return
-	end
-
 	vim.api.nvim_create_user_command("GeminiOpen", M.focus_chat, { desc = "Open the Gemini CLI chat", nargs = "*" })
 	vim.api.nvim_create_user_command("GeminiClose", M.close_chat, { desc = "Close the Gemini CLI chat process" })
 	vim.api.nvim_create_user_command(
@@ -201,3 +228,4 @@ function M.setup(opts)
 end
 
 return M
+
