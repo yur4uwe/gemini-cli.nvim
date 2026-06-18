@@ -29,6 +29,7 @@ A Neovim plugin to seamlessly integrate the Gemini CLI.
     require("gemini").setup({
       split_location = "current", -- optional: "current" (default), "vertical" or "horizontal"
       cmd = "agy",                -- optional: command or path to binary
+      autoreload = true,          -- optional: specifies whether to reload active buffer when gemini writes to files
     })
   end,
 }
@@ -43,6 +44,7 @@ use {
     require("gemini").setup({
       split_location = "current", -- optional: "current" (default), "vertical" or "horizontal"
       cmd = "agy",                -- optional: command or path to binary
+      autoreload = true,          -- optional: specifies whether to reload active buffer when gemini writes to files
     })
   end,
 }
@@ -66,24 +68,16 @@ The plugin can be configured with the following options:
 
 ```lua
 require('gemini').setup({
-  cmd = "agy",                 -- command or path to the binary (default: "agy")
+  cmd = "agy",                -- command or path to the binary (default: "agy")
   split_location = "current", -- "current" (default), "vertical" or "horizontal"
+  autoreload = true,          -- specifies whether to reload active buffer when gemini writes to files
 })
 ```
-
-### Configuration Options
-
-- `cmd`: Command or path to the executable binary (e.g., `"agy"`, or `"/home/user/.local/bin/agy"`).
-- `split_location`: Controls how the Gemini CLI window opens
-  - `"current"` (default): Replaces the current buffer in the active window.
-  - `"vertical"`: Opens in a vertical split (side by side).
-  - `"horizontal"`: Opens in a horizontal split (top and bottom).
-
 ## Usage
 
 This plugin provides the following user commands:
 
-- `:GeminiOpen [args]` - Starts the Gemini process (if not running) and opens the chat window. You can pass arguments like `:GeminiOpen --model gemini-1.5-flash`. **Note:** Arguments are only applied when the process starts. To change arguments for a running process, use `:GeminiClose` first.
+- `:GeminiOpen [args]` - Starts the Gemini process (if not running) and opens the chat window. You can pass arguments like `:GeminiOpen --model gemini-3.5-flash`. **Note:** Arguments are only applied when the process starts. To change arguments for a running process, use `:GeminiClose` first.
 - `:GeminiClose` - Stops the Gemini process and wipes the buffer.
 - `:GeminiSend` - Sends the selected text to the Gemini CLI as a "pasted" block. Works even if the chat window is closed (provided the process is running).
 - `:GeminiChatFocus` - Focuses the Gemini CLI window and enters Insert mode.
