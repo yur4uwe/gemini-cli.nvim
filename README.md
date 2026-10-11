@@ -30,6 +30,7 @@ A Neovim plugin to seamlessly integrate the Gemini CLI.
       split_location = "current", -- optional: "current" (default), "vertical" or "horizontal"
       cmd = "agy",                -- optional: command or path to binary
       autoreload = true,          -- optional: specifies whether to reload active buffer when gemini writes to files
+      notify_style = "float",     -- optional: notification style (default: "float")
     })
   end,
 }
@@ -64,15 +65,22 @@ require('gemini').setup()
 
 ## Configuration
 
-The plugin can be configured with the following options:
+Plugin has following configuration options:
 
-```lua
-require('gemini').setup({
-  cmd = "agy",                -- command or path to the binary (default: "agy")
-  split_location = "current", -- "current" (default), "vertical" or "horizontal"
-  autoreload = true,          -- specifies whether to reload active buffer when gemini writes to files
-})
-```
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `split_location` | string | "current" | Specifies the location of the split window.|
+| `cmd` | string | "agy" | Specifies the command or path to the Antigravity CLI binary. |
+| `autoreload` | boolean | true | Specifies whether to reload active buffer when gemini writes to files. |
+| `notify_style` | string | "float" | Specifies the notification style. |
+
+### Possible values for:
+
+- `split_location`: "current", "vertical", "horizontal"
+- `notify_style`: "float", "notify", "auto", "none"
+
+*Note on "auto" notification style:* 
+
 ## Usage
 
 This plugin provides the following user commands:

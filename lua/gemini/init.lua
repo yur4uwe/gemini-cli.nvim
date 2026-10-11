@@ -7,6 +7,7 @@ local default_config = {
     split_location = "current", -- "current", "vertical" or "horizontal"
     cmd = "agy",
     autoreload = true,
+    notify_style = "float", -- "float", "notify", "auto", or "none"
 }
 
 local config = vim.deepcopy(default_config)
@@ -16,6 +17,7 @@ local state = {
     chan_id = nil,
     reload_timer = nil,
     pending_buffers = {},
+    has_custom_notify = nil,
 }
 
 local function debounced_checktime(target_bufs)
@@ -66,6 +68,8 @@ local function find_buffers_by_name(target_name)
     return matched
 end
 
+--- @param lines string[]
+--- @return table
 local function get_buffers_to_reload(lines)
     local to_reload = {}
     for _, raw_line in ipairs(lines) do
@@ -215,7 +219,23 @@ function M.focus_chat(opts)
     vim.cmd("startinsert")
 end
 
-local function show_floating_message(message)
+local function has_custom_notify()
+    if state.has_custom_notify ~= nil then
+        return state.has_custom_notify
+    end
+
+    local info = debug.getinfo(vim.notify)
+    local is_stock = info and (info.source:match("vim/_editor%.lua$") or info.source:match("vim/shared%.lua$"))
+
+    if not is_stock then
+        state.has_custom_notify = true
+        return true
+    end
+
+    return false
+end
+
+local function show_floating_message(message, level)
     local width = #message + 4
     local height = 1
 
@@ -237,7 +257,7 @@ local function show_floating_message(message)
 
     local ok, win = pcall(vim.api.nvim_open_win, buf, false, win_config)
     if not ok then
-        vim.notify(message, vim.log.levels.INFO)
+        vim.notify(message, level or vim.log.levels.INFO)
         return
     end
 
@@ -248,9 +268,28 @@ local function show_floating_message(message)
     end, 3000)
 end
 
+local function notify(message, level)
+    level = level or vim.log.levels.INFO
+    local style = config.notify_style
+
+    if style == "none" then
+        return
+    end
+
+    if style == "auto" then
+        style = has_custom_notify() and "notify" or "float"
+    end
+
+    if style == "notify" then
+        vim.notify(message, level)
+    else
+        show_floating_message(message, level)
+    end
+end
+
 function M.paste_selection_to_chat(opts)
     if not state.chan_id then
-        show_floating_message("Gemini CLI is not running. Please open it with :GeminiOpen first.")
+        notify("Gemini CLI is not running. Please open it with :GeminiOpen first.", vim.log.levels.WARN)
         return
     end
 
@@ -292,7 +331,7 @@ function M.paste_selection_to_chat(opts)
     end
 
     if not lines or #lines == 0 then
-        show_floating_message("No text selected.")
+        notify("No text selected.", vim.log.levels.WARN)
         return
     end
 
@@ -300,15 +339,27 @@ function M.paste_selection_to_chat(opts)
 
     if text and #text > 0 then
         vim.fn.chansend(state.chan_id, "\27[200~" .. text .. "\27[201~\n")
-        show_floating_message("Sent to Gemini")
+        notify("Sent to Gemini", vim.log.levels.INFO)
     else
-        show_floating_message("No text selected.")
+        notify("No text selected.", vim.log.levels.WARN)
     end
 end
 
 function M.setup(opts)
     -- Merge user config with defaults
     config = vim.tbl_deep_extend("force", default_config, opts or {})
+
+    if config.notify_style == "auto" then
+        vim.api.nvim_create_autocmd("User", {
+            pattern = "VeryLazy",
+            once = true,
+            callback = function()
+                local info = debug.getinfo(vim.notify)
+                local is_stock = info and (info.source:match("vim/_editor%.lua$") or info.source:match("vim/shared%.lua$"))
+                state.has_custom_notify = not is_stock
+            end,
+        })
+    end
 
     vim.api.nvim_create_user_command("GeminiOpen", M.focus_chat, { desc = "Open the Gemini CLI chat", nargs = "*" })
     vim.api.nvim_create_user_command("GeminiClose", M.close_chat, { desc = "Close the Gemini CLI chat process" })
