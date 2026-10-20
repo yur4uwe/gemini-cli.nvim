@@ -75,16 +75,28 @@ local function get_buffers_to_reload(lines)
     for _, raw_line in ipairs(lines) do
         -- Strip ANSI escape sequences for reliable matching
         local line = raw_line:gsub("\27%[[%d;]*%a", "")
-        -- Match quoted or unquoted filename/path after "Edited "
-        local edited_file = line:match('Edited%s+"([^"]+)"')
-            or line:match("Edited%s+'([^']+)'")
-            or line:match("Edited%s+(%S+)")
+        -- Match lines like: ● Edited 1 file (lab-work-2.md) or Edited 2 files (a.lua, b.lua)
+        local files_str = line:match("Edited%s+%d+%s+files?%s+%(([^)]+)%)")
+        if files_str then
+            for edited_file in files_str:gmatch("[^,]+") do
+                edited_file = vim.trim(edited_file)
+                local matched_bufs = find_buffers_by_name(edited_file)
+                for _, b in ipairs(matched_bufs) do
+                    to_reload[b] = true
+                end
+            end
+        else
+            -- Fallback for direct "Edited path/file" formats
+            local edited_file = line:match('Edited%s+"([^"]+)"')
+                or line:match("Edited%s+'([^']+)'")
+                or line:match("Edited%s+(%S+)")
 
-        if edited_file then
-            edited_file = edited_file:gsub("[:.,]+$", "")
-            local matched_bufs = find_buffers_by_name(edited_file)
-            for _, b in ipairs(matched_bufs) do
-                to_reload[b] = true
+            if edited_file then
+                edited_file = edited_file:gsub("[:.,]+$", "")
+                local matched_bufs = find_buffers_by_name(edited_file)
+                for _, b in ipairs(matched_bufs) do
+                    to_reload[b] = true
+                end
             end
         end
     end
@@ -355,7 +367,8 @@ function M.setup(opts)
             once = true,
             callback = function()
                 local info = debug.getinfo(vim.notify)
-                local is_stock = info and (info.source:match("vim/_editor%.lua$") or info.source:match("vim/shared%.lua$"))
+                local is_stock = info and
+                    (info.source:match("vim/_editor%.lua$") or info.source:match("vim/shared%.lua$"))
                 state.has_custom_notify = not is_stock
             end,
         })
