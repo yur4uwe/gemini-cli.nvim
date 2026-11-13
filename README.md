@@ -101,3 +101,11 @@ vim.keymap.set("n", "<leader>gf", "<cmd>GeminiChatFocus<CR>", { desc = "Focus Ge
 ## Troubleshooting
 
 When you run the plugin, it will check if you have the configured binary (`agy` by default) installed. If it's missing, you will see a warning message.
+
+## Tests
+
+Run the edited-path parser tests from the plugin directory:
+
+```sh
+nvim --headless -u NONE --cmd "set rtp^=." -l tests/edited_paths.lua
+```

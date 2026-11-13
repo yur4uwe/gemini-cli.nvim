@@ -1,4 +1,5 @@
 local M = {}
+local edited_paths = require("gemini.edited_paths")
 
 -- Reopening the window when :q is used reloads gemini
 
@@ -73,30 +74,9 @@ end
 local function get_buffers_to_reload(lines)
     local to_reload = {}
     for _, raw_line in ipairs(lines) do
-        -- Strip ANSI escape sequences for reliable matching
-        local line = raw_line:gsub("\27%[[%d;]*%a", "")
-        -- Match lines like: ● Edited 1 file (lab-work-2.md) or Edited 2 files (a.lua, b.lua)
-        local files_str = line:match("Edited%s+%d+%s+files?%s+%(([^)]+)%)")
-        if files_str then
-            for edited_file in files_str:gmatch("[^,]+") do
-                edited_file = vim.trim(edited_file)
-                local matched_bufs = find_buffers_by_name(edited_file)
-                for _, b in ipairs(matched_bufs) do
-                    to_reload[b] = true
-                end
-            end
-        else
-            -- Fallback for direct "Edited path/file" formats
-            local edited_file = line:match('Edited%s+"([^"]+)"')
-                or line:match("Edited%s+'([^']+)'")
-                or line:match("Edited%s+(%S+)")
-
-            if edited_file then
-                edited_file = edited_file:gsub("[:.,]+$", "")
-                local matched_bufs = find_buffers_by_name(edited_file)
-                for _, b in ipairs(matched_bufs) do
-                    to_reload[b] = true
-                end
+        for _, path in ipairs(edited_paths.parse(raw_line)) do
+            for _, buf in ipairs(find_buffers_by_name(path)) do
+                to_reload[buf] = true
             end
         end
     end
